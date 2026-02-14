@@ -1,0 +1,16 @@
+[project]
+name = "zarch_ext_iam_grants"
+version = "0.1.0"
+description = "Z-Arch extension: iam-grants"
+requires-python = ">=3.11"
+dependencies = ["zarch"]
+
+[project.entry-points."zarch.extensions"]
+iam-grants = "zarch_ext_iam_grants:Extension"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["zarch_ext_iam_grants"]
