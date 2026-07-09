@@ -6,9 +6,9 @@ It is intended for IAM relationships that Z-Arch does not natively manage.
 This extension is deployment-lifecycle automation. It is not app runtime logic.
 
 ## Scope and Guarantees
-- Uses only `project_context.gcloud(...)` for IAM reads/writes.
+- Uses only `await project_context.gcloud(...)` for IAM reads/writes.
 - Resolves principals from deployed resources at runtime (no service accounts in config).
-- Fails closed when a principal service account cannot be resolved.
+- Fails closed by default when a principal service account cannot be resolved.
 - Applies only unconditional bindings.
 - Is idempotent for unconditional bindings.
 - Rejects risky `custom` command shapes.
@@ -21,9 +21,9 @@ This extension is deployment-lifecycle automation. It is not app runtime logic.
 
 ## Lifecycle Hooks
 This extension executes on:
-- `post_service_deploy`
-- `post_job_deploy`
-- `post_scheduler_deploy`
+- `async post_service_deploy`
+- `async post_job_deploy`
+- `async post_scheduler_deploy`
 
 Each hook evaluates the full configured binding set.
 
@@ -48,6 +48,7 @@ extensions:
     required_roles: []
     config:
       continue_on_error: false
+      enable_iamcredentials_api: false
       principal_bindings: []
 ```
 
@@ -67,20 +68,21 @@ extensions:
 | `required_roles` | list[string] | no | `[]` | Roles needed by the actor running the extension |
 | `config` | object | recommended | none | Preferred wrapper for extension settings |
 | `config.continue_on_error` | bool/string/int | no | `false` | Boolean parser accepts common forms (`true/false`, `1/0`, `yes/no`) |
+| `config.enable_iamcredentials_api` | bool/string/int | no | `false` | When true, enables `iamcredentials.googleapis.com` before applying grants |
 | `config.principal_bindings` | list[object] | no | `[]` | Empty list is valid (no-op) |
 | `principal_bindings[i].principal.kind` | string | yes | none | One of `service`, `job`, `scheduler` |
 | `principal_bindings[i].principal.id` | string | yes | none | Resource ID from `services`/`jobs`/scheduler name |
 | `principal_bindings[i].grants` | list[object] | yes | none | Must be non-empty |
 | `grants[j].role` | string | yes | none | IAM role name |
-| `grants[j].target.kind` | string | yes | none | One of `project`, `secret`, `run_service`, `run_job`, `topic`, `bucket`, `custom` |
+| `grants[j].target.kind` | string | yes | none | One of `project`, `secret`, `run_service`, `run_job`, `topic`, `bucket`, `service_account`, `custom` |
 
 ## Principal Resolution
 The extension resolves service accounts per principal kind using `gcloud describe`:
-- `service`: `run services describe <id> --format=value(spec.template.spec.serviceAccountName)`
-- `job`: `run jobs describe <id> --format=value(spec.template.spec.template.spec.serviceAccountName)`
+- `service`: tries `run services describe <id> --format=value(template.serviceAccount)` first, then falls back to `--format=value(spec.template.spec.serviceAccountName)` if empty.
+- `job`: tries `run jobs describe <id> --format=value(template.template.serviceAccount)` first, then falls back to `--format=value(spec.template.spec.template.spec.serviceAccountName)` if empty.
 - `scheduler`: `scheduler jobs describe <id> --format=value(httpTarget.oidcToken.serviceAccountEmail)`
 
-If resolution fails or returns empty, the grant fails.
+If resolution fails or returns empty, the grant fails when `continue_on_error=false` and is logged/skipped when `continue_on_error=true`.
 
 No service-account email should be authored in config.
 
@@ -137,6 +139,17 @@ Optional:
 Behavior:
 - Bucket names are normalized to `gs://...` when building commands.
 
+### `service_account`
+Required:
+- `kind: service_account`
+- `resource.kind` (`service`, `job`, or `scheduler`)
+- `resource.id` (resource ID to resolve to a service account)
+
+Behavior:
+- Resolves the target service account from deployed resource metadata.
+- Manages IAM with `gcloud iam service-accounts get-iam-policy` and
+  `gcloud iam service-accounts add-iam-policy-binding`.
+
 ### `custom`
 Required:
 - `kind: custom`
@@ -184,6 +197,8 @@ Set `required_roles` to cover all targeted IAM APIs. Typical mappings:
 - Cloud Run service/job bindings: `roles/run.admin`
 - Pub/Sub topic bindings: `roles/pubsub.admin`
 - Storage bucket bindings: `roles/storage.admin`
+- Service account bindings: `roles/iam.serviceAccountAdmin`
+- API enablement: `roles/serviceusage.serviceUsageAdmin`
 - Custom targets: least-privileged admin role for that specific API/resource type
 
 ## Generic Example (Sanitized)
@@ -199,6 +214,7 @@ extensions:
       - "roles/artifactregistry.admin"
     config:
       continue_on_error: false
+      enable_iamcredentials_api: false
       principal_bindings:
         - principal:
             kind: service
@@ -245,7 +261,7 @@ Unit tests:
 
 Integration-style, side-effect-free tests:
 - `extensions/zarch_ext_iam_grants/tests/test_extension_integration.py`
-- Uses in-memory fake `project_context.gcloud`.
+- Uses in-memory async fake `project_context.gcloud`.
 - No real GCP calls, no project side effects.
 
 Run:

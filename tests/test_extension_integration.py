@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -41,7 +42,7 @@ class InMemoryIamContext:
     def log(self, message, level=None):
         self.logs.append((message, level))
 
-    def gcloud(self, args):
+    async def gcloud(self, args):
         self.gcloud_calls.append(list(args))
 
         # Discovery calls
@@ -143,13 +144,13 @@ def test_integration_end_to_end_idempotent_for_service_hook():
         }
     }
 
-    ext.post_service_deploy(ctx, cfg)
+    asyncio.run(ext.post_service_deploy(ctx, cfg))
     adds_after_first = [
         c for c in ctx.gcloud_calls if "add-iam-policy-binding" in c
     ]
     assert len(adds_after_first) == 2
 
-    ext.post_service_deploy(ctx, cfg)
+    asyncio.run(ext.post_service_deploy(ctx, cfg))
     adds_after_second = [
         c for c in ctx.gcloud_calls if "add-iam-policy-binding" in c
     ]
@@ -184,7 +185,7 @@ def test_integration_continue_on_error_true_keeps_progress():
         }
     }
 
-    ext.post_service_deploy(ctx, cfg)
+    asyncio.run(ext.post_service_deploy(ctx, cfg))
     project_adds = [
         c for c in ctx.gcloud_calls if c[:3] == ["projects", "add-iam-policy-binding", "demo-project"]
     ]
@@ -220,7 +221,7 @@ def test_integration_continue_on_error_false_stops_progress():
     }
 
     with pytest.raises(RuntimeError, match="Failed to apply IAM binding"):
-        ext.post_service_deploy(ctx, cfg)
+        asyncio.run(ext.post_service_deploy(ctx, cfg))
 
     project_adds = [
         c for c in ctx.gcloud_calls if c[:3] == ["projects", "add-iam-policy-binding", "demo-project"]

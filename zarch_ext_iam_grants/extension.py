@@ -14,11 +14,13 @@ SUPPORTED_TARGET_KINDS = {
     "run_job",
     "topic",
     "bucket",
+    "service_account",
     "custom",
 }
 
 BOOL_TRUE_VALUES = {"true", "1", "yes", "y", "on"}
 BOOL_FALSE_VALUES = {"false", "0", "no", "n", "off"}
+IAM_CREDENTIALS_API = "iamcredentials.googleapis.com"
 CUSTOM_GET_POLICY_VERB = "get-iam-policy"
 CUSTOM_ADD_POLICY_VERB = "add-iam-policy-binding"
 DISALLOWED_CUSTOM_ADD_FLAGS = ("--member", "--role", "--condition")
@@ -32,40 +34,40 @@ class Extension(ZArchExtension):
     def claim(self, extension_name: str, extension_block: Dict[str, Any]) -> bool:
         return extension_block.get("type") == "iam-grants"
 
-    def post_service_deploy(
+    async def post_service_deploy(
         self,
         project_context,
         extension_configuration: Dict[str, Any],
     ) -> None:
-        self._apply_all_bindings(
+        await self._apply_all_bindings(
             project_context=project_context,
             extension_configuration=extension_configuration,
             hook_name="post_service_deploy",
         )
 
-    def post_job_deploy(
+    async def post_job_deploy(
         self,
         project_context,
         extension_configuration: Dict[str, Any],
     ) -> None:
-        self._apply_all_bindings(
+        await self._apply_all_bindings(
             project_context=project_context,
             extension_configuration=extension_configuration,
             hook_name="post_job_deploy",
         )
 
-    def post_scheduler_deploy(
+    async def post_scheduler_deploy(
         self,
         project_context,
         extension_configuration: Dict[str, Any],
     ) -> None:
-        self._apply_all_bindings(
+        await self._apply_all_bindings(
             project_context=project_context,
             extension_configuration=extension_configuration,
             hook_name="post_scheduler_deploy",
         )
 
-    def _apply_all_bindings(
+    async def _apply_all_bindings(
         self,
         *,
         project_context,
@@ -75,6 +77,18 @@ class Extension(ZArchExtension):
         settings = self._resolve_settings(extension_configuration)
         principal_bindings = settings["principal_bindings"]
         continue_on_error = settings["continue_on_error"]
+
+        if settings["enable_iamcredentials_api"]:
+            try:
+                await self._enable_iamcredentials_api(project_context)
+            except Exception as exc:
+                if continue_on_error:
+                    project_context.log(
+                        f"iam-grants: failed to enable {IAM_CREDENTIALS_API}: {exc}",
+                        level="warn",
+                    )
+                else:
+                    raise
 
         if not principal_bindings:
             project_context.log(
@@ -100,7 +114,7 @@ class Extension(ZArchExtension):
             )
 
             try:
-                sa_email = self._resolve_service_account_email(
+                sa_email = await self._resolve_service_account_email(
                     project_context=project_context,
                     principal=principal,
                 )
@@ -131,7 +145,7 @@ class Extension(ZArchExtension):
                 seen_binding_keys.add(dedupe_key)
 
                 try:
-                    change_applied = self._ensure_binding(
+                    change_applied = await self._ensure_binding(
                         project_context=project_context,
                         member=member,
                         role=role,
@@ -174,6 +188,10 @@ class Extension(ZArchExtension):
             cfg_obj.get("continue_on_error", False),
             field_name="continue_on_error",
         )
+        enable_iamcredentials_api = self._parse_bool(
+            cfg_obj.get("enable_iamcredentials_api", False),
+            field_name="enable_iamcredentials_api",
+        )
         principal_bindings_raw = cfg_obj.get("principal_bindings", [])
         if principal_bindings_raw is None:
             principal_bindings_raw = []
@@ -192,6 +210,7 @@ class Extension(ZArchExtension):
 
         return {
             "continue_on_error": continue_on_error,
+            "enable_iamcredentials_api": enable_iamcredentials_api,
             "principal_bindings": principal_bindings,
         }
 
@@ -313,6 +332,32 @@ class Extension(ZArchExtension):
                 target["project_id"] = project_id
             return target
 
+        if kind == "service_account":
+            resource_raw = target_raw.get("resource")
+            if not isinstance(resource_raw, Mapping):
+                raise RuntimeError(
+                    f"principal_bindings[{binding_index}].grants[{grant_index}].target.resource must be an object for kind=service_account."
+                )
+            resource_kind = str(resource_raw.get("kind", "")).strip().lower()
+            resource_id = str(resource_raw.get("id", "")).strip()
+            if resource_kind not in SUPPORTED_PRINCIPAL_KINDS:
+                raise RuntimeError(
+                    "principal_bindings[{b}].grants[{g}].target.resource.kind must be one of {kinds}".format(
+                        b=binding_index,
+                        g=grant_index,
+                        kinds=sorted(SUPPORTED_PRINCIPAL_KINDS),
+                    )
+                )
+            if not resource_id:
+                raise RuntimeError(
+                    f"principal_bindings[{binding_index}].grants[{grant_index}].target.resource.id is required for kind=service_account."
+                )
+            target["resource"] = {
+                "kind": resource_kind,
+                "id": resource_id,
+            }
+            return target
+
         if kind == "custom":
             get_policy_command = self._parse_command_list(
                 target_raw.get("get_policy_command"),
@@ -352,6 +397,26 @@ class Extension(ZArchExtension):
             f"Unsupported target kind: {kind}"
         )
 
+    async def _enable_iamcredentials_api(self, project_context) -> None:
+        output, code = await project_context.gcloud(
+            [
+                "services",
+                "enable",
+                IAM_CREDENTIALS_API,
+                "--project",
+                project_context.id,
+                "--quiet",
+            ]
+        )
+        if code != 0:
+            raise RuntimeError(
+                f"Failed to enable {IAM_CREDENTIALS_API}: {output}"
+            )
+        project_context.log(
+            f"iam-grants: ensured {IAM_CREDENTIALS_API} is enabled.",
+            level="info",
+        )
+
     def _parse_command_list(self, value: Any, *, field_name: str) -> list[str]:
         if not isinstance(value, list) or not value:
             raise RuntimeError(f"{field_name} must be a non-empty list of strings.")
@@ -386,7 +451,7 @@ class Extension(ZArchExtension):
                     "The extension sets principal/role and does not support conditional grants."
                 )
 
-    def _resolve_service_account_email(
+    async def _resolve_service_account_email(
         self,
         *,
         project_context,
@@ -397,17 +462,17 @@ class Extension(ZArchExtension):
         discovered = ""
 
         if principal_kind == "service":
-            discovered = self._lookup_service_service_account(
+            discovered = await self._lookup_service_service_account(
                 project_context=project_context,
                 service_id=principal_id,
             )
         elif principal_kind == "job":
-            discovered = self._lookup_job_service_account(
+            discovered = await self._lookup_job_service_account(
                 project_context=project_context,
                 job_id=principal_id,
             )
         elif principal_kind == "scheduler":
-            discovered = self._lookup_scheduler_service_account(
+            discovered = await self._lookup_scheduler_service_account(
                 project_context=project_context,
                 scheduler_id=principal_id,
             )
@@ -422,17 +487,21 @@ class Extension(ZArchExtension):
 
         raise RuntimeError(
             "Could not resolve service account for "
-            f"{principal_kind}:{principal_id}. Resource lookup returned no service account."
+            f"{principal_kind}:{principal_id}. Resource lookup returned no service account "
+            f"(project={project_context.id}, region={project_context.region}). "
+            "If this principal may not exist yet, set continue_on_error=true to "
+            "log and continue instead of failing fast."
         )
 
-    def _lookup_service_service_account(
+    async def _lookup_service_service_account(
         self,
         *,
         project_context,
         service_id: str,
     ) -> str:
-        output, code = project_context.gcloud(
-            [
+        return await self._lookup_cloud_run_service_account(
+            project_context=project_context,
+            base_describe_cmd=[
                 "run",
                 "services",
                 "describe",
@@ -441,21 +510,22 @@ class Extension(ZArchExtension):
                 project_context.region,
                 "--project",
                 project_context.id,
-                "--format=value(spec.template.spec.serviceAccountName)",
-            ]
+            ],
+            format_paths=[
+                "template.serviceAccount",
+                "spec.template.spec.serviceAccountName",
+            ],
         )
-        if code != 0:
-            return ""
-        return output.strip()
 
-    def _lookup_job_service_account(
+    async def _lookup_job_service_account(
         self,
         *,
         project_context,
         job_id: str,
     ) -> str:
-        output, code = project_context.gcloud(
-            [
+        return await self._lookup_cloud_run_service_account(
+            project_context=project_context,
+            base_describe_cmd=[
                 "run",
                 "jobs",
                 "describe",
@@ -464,20 +534,40 @@ class Extension(ZArchExtension):
                 project_context.region,
                 "--project",
                 project_context.id,
-                "--format=value(spec.template.spec.template.spec.serviceAccountName)",
-            ]
+            ],
+            format_paths=[
+                "template.template.serviceAccount",
+                "spec.template.spec.template.spec.serviceAccountName",
+            ],
         )
-        if code != 0:
-            return ""
-        return output.strip()
 
-    def _lookup_scheduler_service_account(
+    async def _lookup_cloud_run_service_account(
+        self,
+        *,
+        project_context,
+        base_describe_cmd: list[str],
+        format_paths: list[str],
+        ) -> str:
+        for format_path in format_paths:
+            output, code = await project_context.gcloud(
+                [
+                    *base_describe_cmd,
+                    f"--format=value({format_path})",
+                ]
+            )
+            if code == 0:
+                normalized = output.strip()
+                if normalized:
+                    return normalized
+        return ""
+
+    async def _lookup_scheduler_service_account(
         self,
         *,
         project_context,
         scheduler_id: str,
     ) -> str:
-        output, code = project_context.gcloud(
+        output, code = await project_context.gcloud(
             [
                 "scheduler",
                 "jobs",
@@ -502,7 +592,7 @@ class Extension(ZArchExtension):
             raise RuntimeError("Service account value is empty.")
         return f"{trimmed}@{project_id}.iam.gserviceaccount.com"
 
-    def _ensure_binding(
+    async def _ensure_binding(
         self,
         *,
         project_context,
@@ -510,14 +600,14 @@ class Extension(ZArchExtension):
         role: str,
         target: Mapping[str, Any],
     ) -> bool:
-        get_cmd, add_cmd, target_label = self._build_target_commands(
+        get_cmd, add_cmd, target_label = await self._build_target_commands(
             target=target,
             project_context=project_context,
             role=role,
             member=member,
         )
 
-        policy_out, get_code = project_context.gcloud(get_cmd)
+        policy_out, get_code = await project_context.gcloud(get_cmd)
         if get_code != 0:
             raise RuntimeError(
                 f"Failed to read IAM policy for target {target_label}: {policy_out}"
@@ -541,7 +631,7 @@ class Extension(ZArchExtension):
                 "iam-grants currently manages only unconditional bindings."
             )
 
-        add_out, add_code = project_context.gcloud(add_cmd)
+        add_out, add_code = await project_context.gcloud(add_cmd)
         if add_code != 0:
             raise RuntimeError(
                 f"Failed to apply IAM binding for target {target_label}: {add_out}"
@@ -553,7 +643,7 @@ class Extension(ZArchExtension):
         )
         return True
 
-    def _build_target_commands(
+    async def _build_target_commands(
         self,
         *,
         target: Mapping[str, Any],
@@ -716,6 +806,35 @@ class Extension(ZArchExtension):
             ]
             return get_cmd, add_cmd, f"bucket:{bucket_resource}"
 
+        if target_kind == "service_account":
+            resource = target["resource"]
+            service_account_email = await self._resolve_service_account_email(
+                project_context=project_context,
+                principal=resource,
+            )
+            get_cmd = [
+                "iam",
+                "service-accounts",
+                "get-iam-policy",
+                service_account_email,
+                "--project",
+                project_id,
+                "--format=json",
+            ]
+            add_cmd = [
+                "iam",
+                "service-accounts",
+                "add-iam-policy-binding",
+                service_account_email,
+                "--project",
+                project_id,
+                "--member",
+                member,
+                "--role",
+                role,
+            ]
+            return get_cmd, add_cmd, f"service_account:{service_account_email}"
+
         if target_kind == "custom":
             get_cmd = list(target["get_policy_command"])
             add_cmd = list(target["add_binding_command"])
@@ -784,6 +903,18 @@ class Extension(ZArchExtension):
             return "bucket:project={project}:name={name}".format(
                 project=project_id,
                 name=self._normalize_bucket_resource(str(target.get("name", ""))),
+            )
+        if target_kind == "service_account":
+            resource = target.get("resource", {})
+            if not isinstance(resource, Mapping):
+                return f"service_account:project={project_id}:resource=unknown"
+            return (
+                "service_account:project={project}:region={region}:resource={kind}:{id}".format(
+                    project=project_id,
+                    region=region,
+                    kind=resource.get("kind"),
+                    id=resource.get("id"),
+                )
             )
         if target_kind == "custom":
             get_cmd = " ".join(target.get("get_policy_command", []))
