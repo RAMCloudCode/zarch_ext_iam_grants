@@ -38,13 +38,13 @@ block exists in `zarch.yaml`.
 
 ## Config Contract
 Canonical location:
-- `extensions.<extension_name>` where `type: "iam-grants"`
+- `extensions.<instance_name>` where `extension: "iam-grants"`
 
 Canonical shape:
 ```yaml
 extensions:
   iam-grants:
-    type: "iam-grants"
+    extension: "iam-grants"
     required_roles: []
     config:
       continue_on_error: false
@@ -56,7 +56,7 @@ Backward-compatible shape (accepted by parser, not preferred for new configs):
 ```yaml
 extensions:
   iam-grants:
-    type: "iam-grants"
+    extension: "iam-grants"
     continue_on_error: false
     principal_bindings: []
 ```
@@ -64,7 +64,7 @@ extensions:
 ### Field-by-Field Schema
 | Path | Type | Required | Default | Notes |
 |---|---|---:|---|---|
-| `type` | string | yes | none | Must be `"iam-grants"` |
+| `extension` | string | yes | none | Must be `"iam-grants"` |
 | `required_roles` | list[string] | no | `[]` | Roles needed by the actor running the extension |
 | `config` | object | recommended | none | Preferred wrapper for extension settings |
 | `config.continue_on_error` | bool/string/int | no | `false` | Boolean parser accepts common forms (`true/false`, `1/0`, `yes/no`) |
@@ -206,7 +206,7 @@ Use placeholder IDs and names when sharing publicly:
 ```yaml
 extensions:
   iam-grants:
-    type: "iam-grants"
+    extension: "iam-grants"
     required_roles:
       - "roles/resourcemanager.projectIamAdmin"
       - "roles/secretmanager.admin"
@@ -240,7 +240,7 @@ extensions:
 
 ## LLM Authoring Rules (Strict)
 1. Never include service-account emails in config.
-2. Always set `type: "iam-grants"`.
+2. Always set `extension: "iam-grants"`.
 3. Always place settings under `config`.
 4. Keep `continue_on_error` explicit (`false` unless intentional).
 5. Keep each `principal_bindings[i].grants` minimal and resource-scoped.

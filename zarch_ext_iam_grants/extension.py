@@ -31,9 +31,6 @@ class Extension(ZArchExtension):
     Z-Arch extension: iam-grants
     """
 
-    def claim(self, extension_name: str, extension_block: Dict[str, Any]) -> bool:
-        return extension_block.get("type") == "iam-grants"
-
     async def post_service_deploy(
         self,
         project_context,
