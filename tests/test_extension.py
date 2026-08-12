@@ -30,7 +30,7 @@ def test_resolve_settings_parses_expected_shape():
         "continue_on_error": "false",
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/logging.logWriter",
@@ -58,7 +58,7 @@ def test_resolve_settings_defaults_to_fail_fast():
     cfg = {
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {"role": "roles/logging.logWriter", "target": {"kind": "project"}}
                 ],
@@ -77,7 +77,7 @@ def test_resolve_settings_parses_service_account_target_and_api_enable():
             "enable_iamcredentials_api": "true",
             "principal_bindings": [
                 {
-                    "principal": {"kind": "service", "id": "cashcheck-ingest"},
+                    "principal": {"kind": "service", "id": "example-ingest-service"},
                     "grants": [
                         {
                             "role": "roles/iam.serviceAccountTokenCreator",
@@ -85,7 +85,7 @@ def test_resolve_settings_parses_service_account_target_and_api_enable():
                                 "kind": "service_account",
                                 "resource": {
                                     "kind": "service",
-                                    "id": "cashcheck-ingest",
+                                    "id": "example-ingest-service",
                                 },
                             },
                         }
@@ -103,7 +103,7 @@ def test_resolve_settings_parses_service_account_target_and_api_enable():
         "kind": "service_account",
         "resource": {
             "kind": "service",
-            "id": "cashcheck-ingest",
+            "id": "example-ingest-service",
         },
     }
 
@@ -113,7 +113,7 @@ def test_resolve_settings_rejects_invalid_target_shape():
     cfg = {
         "principal_bindings": [
             {
-                "principal": {"kind": "job", "id": "cashcheck-compute"},
+                "principal": {"kind": "job", "id": "example-processing-job"},
                 "grants": [
                     {
                         "role": "roles/run.invoker",
@@ -133,7 +133,7 @@ def test_custom_target_requires_policy_verbs():
     cfg = {
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/viewer",
@@ -160,7 +160,7 @@ def test_custom_target_rejects_member_role_or_condition_flags():
     cfg = {
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/viewer",
@@ -211,8 +211,8 @@ def test_build_target_commands_for_service_account_shape():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-ingest"]:
-            return ("cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com\n", 0)
+        if args[:4] == ["run", "services", "describe", "example-ingest-service"]:
+            return ("example-ingest-service-sa@proj-123.iam.gserviceaccount.com\n", 0)
         return ("{}", 0)
 
     ctx = DummyContext(project_id="proj-123", region="us-central1", responder=responder)
@@ -220,18 +220,18 @@ def test_build_target_commands_for_service_account_shape():
     get_cmd, add_cmd, label = asyncio.run(ext._build_target_commands(
         target={
             "kind": "service_account",
-            "resource": {"kind": "service", "id": "cashcheck-ingest"},
+            "resource": {"kind": "service", "id": "example-ingest-service"},
         },
         project_context=ctx,
         role="roles/iam.serviceAccountTokenCreator",
-        member="serviceAccount:cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com",
+        member="serviceAccount:example-ingest-service-sa@proj-123.iam.gserviceaccount.com",
     ))
 
     assert get_cmd == [
         "iam",
         "service-accounts",
         "get-iam-policy",
-        "cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com",
+        "example-ingest-service-sa@proj-123.iam.gserviceaccount.com",
         "--project",
         "proj-123",
         "--format=json",
@@ -240,15 +240,15 @@ def test_build_target_commands_for_service_account_shape():
         "iam",
         "service-accounts",
         "add-iam-policy-binding",
-        "cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com",
+        "example-ingest-service-sa@proj-123.iam.gserviceaccount.com",
         "--project",
         "proj-123",
         "--member",
-        "serviceAccount:cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com",
+        "serviceAccount:example-ingest-service-sa@proj-123.iam.gserviceaccount.com",
         "--role",
         "roles/iam.serviceAccountTokenCreator",
     ]
-    assert label == "service_account:cashcheck-ingest-sa@proj-123.iam.gserviceaccount.com"
+    assert label == "service_account:example-ingest-service-sa@proj-123.iam.gserviceaccount.com"
 
 
 def test_custom_target_appends_member_role_and_project():
@@ -280,7 +280,7 @@ def test_idempotency_skips_add_when_binding_exists():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("svc-sa@demo-project.iam.gserviceaccount.com\n", 0)
         if args[:3] == ["projects", "get-iam-policy", "demo-project"]:
             return (
@@ -296,7 +296,7 @@ def test_idempotency_skips_add_when_binding_exists():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/logging.logWriter",
@@ -320,11 +320,11 @@ def test_idempotency_skips_add_when_binding_exists():
 
 def test_service_account_token_creator_idempotency_skips_existing_binding():
     ext = Extension()
-    sa_email = "cashcheck-ingest-sa@demo-project.iam.gserviceaccount.com"
+    sa_email = "example-ingest-service-sa@demo-project.iam.gserviceaccount.com"
     member = f"serviceAccount:{sa_email}"
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-ingest"]:
+        if args[:4] == ["run", "services", "describe", "example-ingest-service"]:
             return (sa_email + "\n", 0)
         if args[:3] == ["iam", "service-accounts", "get-iam-policy"]:
             return (
@@ -342,7 +342,7 @@ def test_service_account_token_creator_idempotency_skips_existing_binding():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-ingest"},
+                "principal": {"kind": "service", "id": "example-ingest-service"},
                 "grants": [
                     {
                         "role": "roles/iam.serviceAccountTokenCreator",
@@ -350,7 +350,7 @@ def test_service_account_token_creator_idempotency_skips_existing_binding():
                             "kind": "service_account",
                             "resource": {
                                 "kind": "service",
-                                "id": "cashcheck-ingest",
+                                "id": "example-ingest-service",
                             },
                         },
                     }
@@ -405,9 +405,9 @@ def test_lookup_service_service_account_prefers_v2_format():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-ingest"]:
+        if args[:4] == ["run", "services", "describe", "example-ingest-service"]:
             if "--format=value(template.serviceAccount)" in args:
-                return ("cashcheck-ingest-sa@demo-project.iam.gserviceaccount.com\n", 0)
+                return ("example-ingest-service-sa@demo-project.iam.gserviceaccount.com\n", 0)
             if "--format=value(spec.template.spec.serviceAccountName)" in args:
                 return ("legacy-should-not-be-used@demo-project.iam.gserviceaccount.com\n", 0)
         return ("{}", 0)
@@ -415,10 +415,10 @@ def test_lookup_service_service_account_prefers_v2_format():
     ctx = DummyContext(responder=responder)
     resolved = asyncio.run(ext._lookup_service_service_account(
         project_context=ctx,
-        service_id="cashcheck-ingest",
+        service_id="example-ingest-service",
     ))
 
-    assert resolved == "cashcheck-ingest-sa@demo-project.iam.gserviceaccount.com"
+    assert resolved == "example-ingest-service-sa@demo-project.iam.gserviceaccount.com"
     legacy_calls = [
         c for c in ctx.gcloud_calls if "--format=value(spec.template.spec.serviceAccountName)" in c
     ]
@@ -429,20 +429,20 @@ def test_lookup_service_service_account_falls_back_to_legacy_format():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-ingest"]:
+        if args[:4] == ["run", "services", "describe", "example-ingest-service"]:
             if "--format=value(template.serviceAccount)" in args:
                 return ("\n", 0)
             if "--format=value(spec.template.spec.serviceAccountName)" in args:
-                return ("cashcheck-ingest-sa@demo-project.iam.gserviceaccount.com\n", 0)
+                return ("example-ingest-service-sa@demo-project.iam.gserviceaccount.com\n", 0)
         return ("{}", 0)
 
     ctx = DummyContext(responder=responder)
     resolved = asyncio.run(ext._lookup_service_service_account(
         project_context=ctx,
-        service_id="cashcheck-ingest",
+        service_id="example-ingest-service",
     ))
 
-    assert resolved == "cashcheck-ingest-sa@demo-project.iam.gserviceaccount.com"
+    assert resolved == "example-ingest-service-sa@demo-project.iam.gserviceaccount.com"
     v2_calls = [c for c in ctx.gcloud_calls if "--format=value(template.serviceAccount)" in c]
     legacy_calls = [
         c for c in ctx.gcloud_calls if "--format=value(spec.template.spec.serviceAccountName)" in c
@@ -455,9 +455,9 @@ def test_lookup_job_service_account_prefers_v2_format():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "jobs", "describe", "cashcheck-compute"]:
+        if args[:4] == ["run", "jobs", "describe", "example-processing-job"]:
             if "--format=value(template.template.serviceAccount)" in args:
-                return ("cashcheck-compute-sa@demo-project.iam.gserviceaccount.com\n", 0)
+                return ("example-processing-job-sa@demo-project.iam.gserviceaccount.com\n", 0)
             if "--format=value(spec.template.spec.template.spec.serviceAccountName)" in args:
                 return ("legacy-should-not-be-used@demo-project.iam.gserviceaccount.com\n", 0)
         return ("{}", 0)
@@ -465,10 +465,10 @@ def test_lookup_job_service_account_prefers_v2_format():
     ctx = DummyContext(responder=responder)
     resolved = asyncio.run(ext._lookup_job_service_account(
         project_context=ctx,
-        job_id="cashcheck-compute",
+        job_id="example-processing-job",
     ))
 
-    assert resolved == "cashcheck-compute-sa@demo-project.iam.gserviceaccount.com"
+    assert resolved == "example-processing-job-sa@demo-project.iam.gserviceaccount.com"
     legacy_calls = [
         c
         for c in ctx.gcloud_calls
@@ -481,20 +481,20 @@ def test_lookup_job_service_account_falls_back_to_legacy_format():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "jobs", "describe", "cashcheck-compute"]:
+        if args[:4] == ["run", "jobs", "describe", "example-processing-job"]:
             if "--format=value(template.template.serviceAccount)" in args:
                 return ("\n", 0)
             if "--format=value(spec.template.spec.template.spec.serviceAccountName)" in args:
-                return ("cashcheck-compute-sa@demo-project.iam.gserviceaccount.com\n", 0)
+                return ("example-processing-job-sa@demo-project.iam.gserviceaccount.com\n", 0)
         return ("{}", 0)
 
     ctx = DummyContext(responder=responder)
     resolved = asyncio.run(ext._lookup_job_service_account(
         project_context=ctx,
-        job_id="cashcheck-compute",
+        job_id="example-processing-job",
     ))
 
-    assert resolved == "cashcheck-compute-sa@demo-project.iam.gserviceaccount.com"
+    assert resolved == "example-processing-job-sa@demo-project.iam.gserviceaccount.com"
     v2_calls = [
         c for c in ctx.gcloud_calls if "--format=value(template.template.serviceAccount)" in c
     ]
@@ -511,7 +511,7 @@ def test_service_account_lookup_fails_when_resource_has_no_sa():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("not found", 1)
         return ("{}", 0)
 
@@ -520,7 +520,7 @@ def test_service_account_lookup_fails_when_resource_has_no_sa():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/logging.logWriter",
@@ -545,9 +545,9 @@ def test_continue_on_error_true_skips_unresolved_principal_and_continues():
     def responder(args):
         if args[:4] == ["run", "services", "describe", "missing-service"]:
             return ("not found", 1)
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             if "--format=value(template.serviceAccount)" in args:
-                return ("cashcheck-report-sa@demo-project.iam.gserviceaccount.com\n", 0)
+                return ("example-report-service-sa@demo-project.iam.gserviceaccount.com\n", 0)
             return ("\n", 0)
         if args[:3] == ["projects", "get-iam-policy", "demo-project"]:
             return ('{"bindings":[]}', 0)
@@ -569,7 +569,7 @@ def test_continue_on_error_true_skips_unresolved_principal_and_continues():
                 ],
             },
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/logging.logWriter",
@@ -603,7 +603,7 @@ def test_scoped_dedupe_keeps_distinct_project_targets():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("svc-sa@demo-project.iam.gserviceaccount.com\n", 0)
         if args[:3] == ["secrets", "get-iam-policy", "s1"]:
             return ('{"bindings":[]}', 0)
@@ -616,7 +616,7 @@ def test_scoped_dedupe_keeps_distinct_project_targets():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/secretmanager.secretAccessor",
@@ -650,7 +650,7 @@ def test_conditional_binding_fails_closed():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("svc-sa@demo-project.iam.gserviceaccount.com\n", 0)
         if args[:3] == ["projects", "get-iam-policy", "demo-project"]:
             return (
@@ -666,7 +666,7 @@ def test_conditional_binding_fails_closed():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/logging.logWriter",
@@ -693,7 +693,7 @@ def test_warn_and_continue_allows_subsequent_grants():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("svc-sa@demo-project.iam.gserviceaccount.com\n", 0)
         if args[:3] == ["secrets", "get-iam-policy", "s1"]:
             return ('{"bindings":[]}', 0)
@@ -710,7 +710,7 @@ def test_warn_and_continue_allows_subsequent_grants():
         "continue_on_error": True,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/secretmanager.secretAccessor",
@@ -740,7 +740,7 @@ def test_fail_fast_raises_on_grant_error():
     ext = Extension()
 
     def responder(args):
-        if args[:4] == ["run", "services", "describe", "cashcheck-report"]:
+        if args[:4] == ["run", "services", "describe", "example-report-service"]:
             return ("svc-sa@demo-project.iam.gserviceaccount.com\n", 0)
         if args[:3] == ["secrets", "get-iam-policy", "s1"]:
             return ('{"bindings":[]}', 0)
@@ -753,7 +753,7 @@ def test_fail_fast_raises_on_grant_error():
         "continue_on_error": False,
         "principal_bindings": [
             {
-                "principal": {"kind": "service", "id": "cashcheck-report"},
+                "principal": {"kind": "service", "id": "example-report-service"},
                 "grants": [
                     {
                         "role": "roles/secretmanager.secretAccessor",

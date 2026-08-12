@@ -122,8 +122,8 @@ def test_integration_end_to_end_idempotent_for_service_hook():
     ctx = InMemoryIamContext()
     ctx.set_service_account(
         kind="service",
-        resource_id="cashcheck-report",
-        email="cashcheck-report-sa@demo-project.iam.gserviceaccount.com",
+        resource_id="example-report-service",
+        email="example-report-service-sa@demo-project.iam.gserviceaccount.com",
     )
 
     cfg = {
@@ -131,7 +131,7 @@ def test_integration_end_to_end_idempotent_for_service_hook():
             "continue_on_error": False,
             "principal_bindings": [
                 {
-                    "principal": {"kind": "service", "id": "cashcheck-report"},
+                    "principal": {"kind": "service", "id": "example-report-service"},
                     "grants": [
                         {"role": "roles/logging.logWriter", "target": {"kind": "project"}},
                         {
@@ -162,8 +162,8 @@ def test_integration_continue_on_error_true_keeps_progress():
     ctx = InMemoryIamContext()
     ctx.set_service_account(
         kind="service",
-        resource_id="cashcheck-report",
-        email="cashcheck-report-sa@demo-project.iam.gserviceaccount.com",
+        resource_id="example-report-service",
+        email="example-report-service-sa@demo-project.iam.gserviceaccount.com",
     )
     ctx.fail_add_for(("secret", "demo-project", "db-password"))
 
@@ -172,7 +172,7 @@ def test_integration_continue_on_error_true_keeps_progress():
             "continue_on_error": True,
             "principal_bindings": [
                 {
-                    "principal": {"kind": "service", "id": "cashcheck-report"},
+                    "principal": {"kind": "service", "id": "example-report-service"},
                     "grants": [
                         {
                             "role": "roles/secretmanager.secretAccessor",
@@ -197,8 +197,8 @@ def test_integration_continue_on_error_false_stops_progress():
     ctx = InMemoryIamContext()
     ctx.set_service_account(
         kind="service",
-        resource_id="cashcheck-report",
-        email="cashcheck-report-sa@demo-project.iam.gserviceaccount.com",
+        resource_id="example-report-service",
+        email="example-report-service-sa@demo-project.iam.gserviceaccount.com",
     )
     ctx.fail_add_for(("secret", "demo-project", "db-password"))
 
@@ -207,7 +207,7 @@ def test_integration_continue_on_error_false_stops_progress():
             "continue_on_error": False,
             "principal_bindings": [
                 {
-                    "principal": {"kind": "service", "id": "cashcheck-report"},
+                    "principal": {"kind": "service", "id": "example-report-service"},
                     "grants": [
                         {
                             "role": "roles/secretmanager.secretAccessor",
